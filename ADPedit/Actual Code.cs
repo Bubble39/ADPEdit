@@ -14,6 +14,8 @@ namespace ADPedit
         public static short fps1 = 1;
         public static short fps2 = 16224;
 
+        public float currentLayout = 0f;
+
         public static void readADP(string x)
         {
             adps.Clear(); //clear list of adp functions when opening a new file
@@ -32,6 +34,9 @@ namespace ADPedit
                             dataLength = br.ReadInt32(),
                             unk1 = br.ReadInt32(),
                             offset = br.ReadInt32(),
+                            unk2 = br.ReadInt32(),
+                            unk3 = br.ReadInt32(),
+                            unkLayout = br.ReadBytes(4)
                         };
                         headerlist.Add(headerStorage);
                     }
@@ -42,10 +47,12 @@ namespace ADPedit
                         var FinalFunc = new adpFunc() //make a new adp function and store it in the FinalFunc var so it can be used in funcDetect
                         {
                             TimeID = br.ReadUInt32(),
-                            timeSecondsMarker = br.ReadSingle(),
-                            unk = br.ReadInt32(),
+                            TimeSeconds = br.ReadSingle(),
+                            timeSecondsMarker = br.ReadBytes(4),
                             frameTime = br.ReadInt32(),
-                            padding = br.ReadDouble(),
+                            //padding = br.ReadDouble(),
+                            unk2 = br.ReadInt32(),
+                            altFlag = br.ReadInt32(),
                             ADPfuncID = br.ReadUInt32(),
                             ADPfuncVal = br.ReadSingle(),
                             ADPfuncName = null,
@@ -74,6 +81,7 @@ namespace ADPedit
         public static void updateADP()
         {
             saveFile(filePathString);
+            
         }
 
         public static void saveFile(string path)
@@ -92,7 +100,10 @@ namespace ADPedit
                         bw.Write(headerStorage.dataLength);
                         bw.Write(headerStorage.unk1);
                         bw.Write(headerStorage.offset);
-                        for (int i = 0; i < 7; i++)
+                        bw.Write(headerStorage.unk2);
+                        bw.Write(headerStorage.unk3);
+                        bw.Write(headerStorage.unkLayout);
+                        for (int i = 0; i < 4; i++)
                         {
                             bw.Write(0x00);
                         }
@@ -101,11 +112,11 @@ namespace ADPedit
                     foreach (adpFunc adp in Code.adps)
                     {
                         bw.Write(adp.TimeID);
-                        bw.Write(0x00);
-                        bw.Write(0x00);
+                        bw.Write(adp.TimeSeconds);
+                        bw.Write(adp.timeSecondsMarker);
                         bw.Write(adp.frameTime);
-                        bw.Write(0x00);
-                        bw.Write(0x00);
+                        bw.Write(adp.unk2);
+                        bw.Write(adp.altFlag);
                         bw.Write(adp.ADPfuncID);
                         if (adp.is30fps)
                         {
@@ -130,6 +141,9 @@ namespace ADPedit
             //Detect ADP Function using the ID it gives us
             switch (adp.ADPfuncID)
             {
+                case 0:
+                    adp.ADPfuncName = "Alternative PV flag";
+                    break;
                 case 1:
                     adp.ADPfuncName = "Brightness";
                     break;
@@ -143,13 +157,22 @@ namespace ADPedit
                     adp.ADPfuncName = "Character Light (BLUE)";
                     break;
                 case 6:
-                    adp.ADPfuncName = "Red Light";
+                    adp.ADPfuncName = "Character Color (RED)";
                     break;
                 case 7:
-                    adp.ADPfuncName = "Green Light";
+                    adp.ADPfuncName = "Character Color (GREEN)";
                     break;
                 case 8:
-                    adp.ADPfuncName = "Blue Light";
+                    adp.ADPfuncName = "Character Color (BLUE)";
+                    break;
+                case 10:
+                    adp.ADPfuncName = "Reflection (RED)";
+                    break;
+                case 11:
+                    adp.ADPfuncName = "Reflection (GREEN)";
+                    break;
+                case 12:
+                    adp.ADPfuncName = "Reflection (BLUE)";
                     break;
                 case 14:
                     adp.ADPfuncName = "Spec. Map Transparency";
@@ -164,7 +187,16 @@ namespace ADPedit
                     adp.ADPfuncName = "Skin Shine";
                     break;
                 case 21:
-                    adp.ADPfuncName = "Outline Transparency";
+                    adp.ADPfuncName = "Celshading Thickness";
+                    break;
+                case 22:
+                    adp.ADPfuncName = "Celshading Eyelid";
+                    break;
+                case 37:
+                    adp.ADPfuncName = "Celshading Body";
+                    break;
+                case 38:
+                    adp.ADPfuncName = "Celshading Clothes/Hair";
                     break;
                 case 39:
                     adp.ADPfuncName = "Eye Lighting";
@@ -179,7 +211,7 @@ namespace ADPedit
                     adp.ADPfuncName = "Cloth Lighting";
                     break;
                 case 43:
-                    adp.ADPfuncName = "Item Lighting";
+                    adp.ADPfuncName = "Item/Facial Lighting";
                     break;
                 case 44:
                     adp.ADPfuncName = "Hair Lighting";
@@ -195,6 +227,15 @@ namespace ADPedit
                     break;
                 case 60:
                     adp.ADPfuncName = "Character Lightness";
+                    break;
+                case 61:
+                    adp.ADPfuncName = "Inner Skin Shine";
+                    break;
+                case 62:
+                    adp.ADPfuncName = "Shadow Intensity";
+                    break;
+                case 63:
+                    adp.ADPfuncName = "Shadow Opacity";
                     break;
                 case 72:
                     adp.ADPfuncName = "Eye Colour Saturation";
@@ -212,7 +253,7 @@ namespace ADPedit
                     adp.ADPfuncName = "Docked Resolution";
                     break;
                 default:
-                    adp.ADPfuncName = "Unknown Function";
+                    adp.ADPfuncName = "Unk.";
                     break;
             }
             adps.Add(adp);
@@ -220,103 +261,111 @@ namespace ADPedit
 
         public static adpFunc funcDetectNoList(adpFunc newadp, string curText, bool enable)
         {
+            newadp.ADPfuncName = curText;
+
             //Give the newadp variable ADPfuncName and ADPfuncID based on what the current selection is in either comboBox
             switch (curText)
             {
+                case "Alternative PV flag":
+                    newadp.ADPfuncID = 0;
+                    break;
                 case "Brightness":
-                    newadp.ADPfuncName = "Brightness";
                     newadp.ADPfuncID = 1;
                     break;
                 case "Character Light (RED)":
-                    newadp.ADPfuncName = "Character Light (RED)";
                     newadp.ADPfuncID = 2;
                     break;
                 case "Character Light (GREEN)":
-                    newadp.ADPfuncName = "Character Light (GREEN)";
                     newadp.ADPfuncID = 3;
                     break;
                 case "Character Light (BLUE)":
-                    newadp.ADPfuncName = "Character Light (BLUE)";
                     newadp.ADPfuncID = 4;
                     break;
-                case "Red Light":
-                    newadp.ADPfuncName = "Red Light";
+                case "Character Color (RED)":
                     newadp.ADPfuncID = 6;
                     break;
-                case "Green Light":
-                    newadp.ADPfuncName = "Green Light";
+                case "Character Color (GREEN)":
                     newadp.ADPfuncID = 7;
                     break;
-                case "Blue Light":
-                    newadp.ADPfuncName = "Blue Light";
+                case "Character Color (BLUE)":
                     newadp.ADPfuncID = 8;
                     break;
+                case "Reflection (RED)":
+                    newadp.ADPfuncID = 10;
+                    break;
+                case "Reflection (GREEN)":
+                    newadp.ADPfuncID = 11;
+                    break;
+                case "Reflection (BLUE)":
+                    newadp.ADPfuncID = 12;
+                    break;
                 case "Spec. Map Transparency":
-                    newadp.ADPfuncName = "Spec. Map Transparency";
                     newadp.ADPfuncID = 14;
                     break;
                 case "Character Lighting":
-                    newadp.ADPfuncName = "Character Lighting";
                     newadp.ADPfuncID = 15;
                     break;
                 case "Generic Lighting":
-                    newadp.ADPfuncName = "Generic Lighting";
                     newadp.ADPfuncID = 17;
                     break;
-                case "Outline Transparency":
-                    newadp.ADPfuncName = "Outline Transparency";
+                case "Celshading Thickness":
                     newadp.ADPfuncID = 21;
                     break;
                 case "Skin Shine":
-                    newadp.ADPfuncName = "Skin Shine";
                     newadp.ADPfuncID = 18;
                     break;
+                case "Celshading Eyelid":
+                    newadp.ADPfuncID = 22;
+                    break;
+                case "Celshading Body":
+                    newadp.ADPfuncID = 37;
+                    break;
+                case "Celshading Hair/Clothes":
+                    newadp.ADPfuncID = 38;
+                    break;
                 case "Eye Lighting":
-                    newadp.ADPfuncName = "Eye Lighting";
                     newadp.ADPfuncID = 39;
                     break;
-                case "Skin Lighting":
-                    newadp.ADPfuncName = "Skin Toon Intensity";
+                case "Skin Toon Intensity":
                     newadp.ADPfuncID = 40;
                     break;
                 case "BLINN Lighting":
-                    newadp.ADPfuncName = "BLINN Lighting";
                     newadp.ADPfuncID = 41;
                     break;
                 case "Cloth Lighting":
-                    newadp.ADPfuncName = "Cloth Lighting";
                     newadp.ADPfuncID = 42;
                     break;
-                case "Item Lighting":
-                    newadp.ADPfuncName = "Item Lighting";
+                case "Item/Facial Lighting":
                     newadp.ADPfuncID = 43;
                     break;
                 case "Hair Lighting":
-                    newadp.ADPfuncName = "Hair Lighting";
                     newadp.ADPfuncID = 44;
                     break;
                 case "Stage Lighting":
-                    newadp.ADPfuncName = "Stage Lighting";
                     newadp.ADPfuncID = 46;
                     break;
                 case "Hair Shine":
-                    newadp.ADPfuncName = "Hair Shine";
                     newadp.ADPfuncID = 57;
                     break;
                 case "Dimness":
-                    newadp.ADPfuncName = "Dimness";
                     newadp.ADPfuncID = 59;
                     break;
                 case "Character Lightness":
-                    newadp.ADPfuncName = "Character Lightness";
                     newadp.ADPfuncID = 60;
                     break;
+                case "Inner Skin Shine":
+                    newadp.ADPfuncID = 61;
+                    break;
+                case "Shadow Intensity":
+                    newadp.ADPfuncID = 62;
+                    break;
+                case "Shadow Opacity":
+                    newadp.ADPfuncID = 63;
+                    break;
                 case "Eye Colour Saturation":
-                    newadp.ADPfuncName = "Eye Colour Saturation";
                     newadp.ADPfuncID = 72;
                     break;
                 case "Handheld 30FPS Limit":
-                    newadp.ADPfuncName = "Handheld 30FPS Limit";
                     newadp.ADPfuncID = 75;
                     if (enable)
                     {
@@ -324,7 +373,6 @@ namespace ADPedit
                     }
                     break;
                 case "Docked 30FPS Limit":
-                    newadp.ADPfuncName = "Docked 30FPS Limit";
                     newadp.ADPfuncID = 76;
                     if (enable)
                     {
@@ -332,15 +380,13 @@ namespace ADPedit
                     }
                     break;
                 case "Handheld Resolution":
-                    newadp.ADPfuncName = "Handheld Resolution";
                     newadp.ADPfuncID = 77;
                     break;
                 case "Docked Resolution":
-                    newadp.ADPfuncName = "Docked Resolution";
                     newadp.ADPfuncID = 78;
                     break;
                 default:
-                    newadp.ADPfuncName = "Unknown Function";
+                    newadp.ADPfuncName = "Unk.";
                     newadp.ADPfuncID = 49;
                     break;
             }
